@@ -711,13 +711,13 @@ class MemeDB:
     def get_child_collections(self, parent_id: int) -> List[dict]:
         conn = self._get_conn()
         rows = conn.execute(
-            "SELECT id, name FROM collections WHERE parent_id=? "
+            "SELECT id, name, sort_order FROM collections WHERE parent_id=? "
             "ORDER BY sort_order ASC",
             (parent_id,),
         ).fetchall()
         return [
             {"id": r[0], "name": r[1]}
-            for r in sorted(rows, key=lambda r: _name_sort_key(r[1]))
+            for r in sorted(rows, key=lambda r: (r[2], _name_sort_key(r[1])))
         ]
 
     def get_collection_depth(self, cid: int) -> int:

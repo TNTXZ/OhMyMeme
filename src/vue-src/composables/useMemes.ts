@@ -60,6 +60,11 @@ export function useMemes() {
       state.total = countResult || 0
       state.pageCount = Math.max(1, Math.ceil(state.total / MEME_PAGE))
       state.memes = memesResult || []
+      // 删除等操作使当前页变空时回退到可用末页，避免停留在空页显示「没有表情包」
+      if (!resetPage && state.memes.length === 0 && state.page > 1) {
+        const target = Math.max(1, Math.min(state.page, state.pageCount))
+        if (target !== state.page) { state.page = target; return search(false) }
+      }
     } catch (e) {
       if (gen !== searchGen) return
       state.memes = []
@@ -100,7 +105,15 @@ export function useMemes() {
     }
     if (pruned) await search()
   }
-  async function refreshCollections() { try { state.collections = (await api('get_collections')) || [] } catch { state.collections = [] } }
+  async function refreshCollections() {
+    try { state.collections = (await api('get_collections')) || [] } catch { state.collections = [] }
+    // 当前分组已被后端隐式删除（如同步 push 时 manifest 清理空分组）时复位到「全部」，避免筛选永久空显
+    const ac = state.activeCollection
+    if (ac && ac > 0 && !_collectionExists(state.collections, ac)) {
+      state.activeCollection = null
+      await search()
+    }
+  }
   async function copyMeme(id: number): Promise<boolean> {
     const result = await api('copy_meme', id)
     return !!result?.ok
@@ -115,6 +128,14 @@ export function useMemes() {
   function setMemes(newMemes: Meme[]) { state.memes = newMemes }
 
   function selectAllVisible() { state.selectedIds = new Set(state.memes.map(m => m.id)) }
+
+  function _collectionExists(items: any[], id: number): boolean {
+    for (const c of items) {
+      if (c.id === id) return true
+      if (c.children && _collectionExists(c.children, id)) return true
+    }
+    return false
+  }
   function clearSelection() { state.selectedIds = new Set() }
 
   function canReorder(): boolean {

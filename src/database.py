@@ -1,11 +1,14 @@
 """SQLite元数据管理 - 零依赖"""
 
+import re
 import sqlite3
 import threading
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .config import get_config
+
+_lazy_pinyin = None
 
 # 备份恢复候选库预校验所需的表与列（backup.prepare_restore_source 使用）
 _RESTORE_REQUIRED_TABLES = (
@@ -56,6 +59,31 @@ _RESTORE_REQUIRED_COLUMNS = {
     "favorites": {"meme_id", "added_at"},
     "recent_uses": {"meme_id", "used_at"},
 }
+
+
+# 名称自然排序键：数字段按整数（1,2,10），其余段按拼音（pypinyin 缺失时退回原串小写）
+def _name_sort_key(name):
+    global _lazy_pinyin
+    key = []
+    for part in re.split(r"(\d+)", str(name)):
+        if not part:
+            continue
+        if part.isdigit():
+            key.append((0, int(part)))
+            continue
+        if _lazy_pinyin is None:
+            try:
+                from pypinyin import lazy_pinyin as _lp
+
+                _lazy_pinyin = _lp
+            except Exception:
+                _lazy_pinyin = False
+        if _lazy_pinyin:
+            text = "".join(_lazy_pinyin(part)).lower()
+        else:
+            text = part.lower()
+        key.append((1, text))
+    return key
 
 
 class MemeDB:
@@ -670,22 +698,27 @@ class MemeDB:
 
     def get_collections(self) -> List[Tuple[int, str, int, int]]:
         conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT id, name, parent_id, sort_order FROM collections "
+            "ORDER BY sort_order ASC"
+        ).fetchall()
+        # 自然排序回退：sort_order 相同（未拖拽）时数字按数值、中文按拼音
         return [
             (r[0], r[1], r[2], r[3])
-            for r in conn.execute(
-                "SELECT id, name, parent_id, sort_order FROM collections "
-                "ORDER BY sort_order ASC, name"
-            ).fetchall()
+            for r in sorted(rows, key=lambda r: (r[3], _name_sort_key(r[1])))
         ]
 
     def get_child_collections(self, parent_id: int) -> List[dict]:
         conn = self._get_conn()
         rows = conn.execute(
             "SELECT id, name FROM collections WHERE parent_id=? "
-            "ORDER BY sort_order ASC, name",
+            "ORDER BY sort_order ASC",
             (parent_id,),
         ).fetchall()
-        return [{"id": r[0], "name": r[1]} for r in rows]
+        return [
+            {"id": r[0], "name": r[1]}
+            for r in sorted(rows, key=lambda r: _name_sort_key(r[1]))
+        ]
 
     def get_collection_depth(self, cid: int) -> int:
         depth = 0

@@ -128,7 +128,8 @@ tests/
 - WebUI 维护非持久的快捷键显示会话状态：仅隐藏主窗口被全局快捷键显示后，成功复制或成功原生向外文件拖拽才会自动隐藏；任意 hide、普通/托盘显示、LAN/其他 show、内部排序拖拽及失败交互均不会触发该自动隐藏。
 
 ### 窗口
-- 主窗口 ~960×640 frameless, 设置窗口 460×560 frameless
+- 主窗口 ~960×640 frameless, 设置窗口 720×560 frameless（每次 `_create_settings_window` 以主窗口当前位置居中创建——`x = 主窗口x + (宽-720)//2`，主窗口坐标不可用时交由系统摆放）
+- 设置窗口是独立 webview：`open_settings` 每次销毁重建，`focus_settings_window` 仅做 z-order 提升
 - Windows 全局热键显示位置仅在隐藏到显示的转换时计算，使用鼠标所在显示器工作区；不改变托盘激活或其他窗口显示路径
 - 自定义 JS 拖拽: 鼠标事件 → `pywebview.api.move_window(dx, dy)`
 - 增量回退（Windows/macOS）用 `screenX/screenY`（**勿改 `clientX/clientY`** — clientX 是相对窗口坐标，窗口自身滞后位移会被下一次 mousemove 当作反向增量回传，形成反馈振荡导致高频抖动）；Linux 走合成器原生拖动不经过此路径
@@ -298,6 +299,7 @@ tests/
 ### 多级分组（最多 3 层）
 - `collections.parent_id` 自引用实现嵌套
 - `create_subcollection(name, parent_id)` 自动检查深度（`get_collection_depth`），超出 2 层拒绝
+- **分组名自然排序回退**：`MemeDB.get_collections`/`get_child_collections` 仅按 `sort_order ASC` 查询后用 Python `_name_sort_key` 稳定排序——`sort_order` 相同（未拖拽）时数字段按整数（1,2,10 而非 1,10,2）、中文按拼音（`pypinyin` 惰性导入，缺失时退回原名小写码点序），替代原 SQL `ORDER BY name` 的二进制码点序
 - 顶层分组在 `#colbar` 渲染为 tab，选中后展开子分组
 - `#tagbar`/`#colbar` 横向溢出：细滚动条可见（`scrollbar-width: thin` + 5px webkit 样式），`initHScroll(barId)` 把滚轮竖向增量转成 `scrollLeft`（按 `deltaMode` 归一化），`DOMContentLoaded` 时对两个栏各绑定一次
 - 分组内右键空白区域 → 新建子分组

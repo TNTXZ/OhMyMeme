@@ -91,7 +91,15 @@ export function useMemes() {
     else state.activeCollection = id
     search()
   }
-  async function refreshTags() { try { state.allTags = (await api('get_tags')) || [] } catch { state.allTags = [] } }
+  async function refreshTags() {
+    try { state.allTags = (await api('get_tags')) || [] } catch { state.allTags = [] }
+    // 清理已不存在的激活标签（如删除标签下最后一张图后孤儿标签被清理），否则筛选永久卡死
+    let pruned = false
+    for (const t of [...state.activeTags]) {
+      if (!state.allTags.includes(t)) { state.activeTags.delete(t); pruned = true }
+    }
+    if (pruned) await search()
+  }
   async function refreshCollections() { try { state.collections = (await api('get_collections')) || [] } catch { state.collections = [] } }
   async function copyMeme(id: number): Promise<boolean> {
     const result = await api('copy_meme', id)

@@ -457,7 +457,7 @@ async function onCtxAction(action: string) {
       break
     }
     case 'delete': {
-      if (await confirmAsk('删除表情包', '确定删除这个表情包吗？')) { await window.pywebview?.api?.delete_meme(t.memeId); search(); refreshCollections() }
+      if (await confirmAsk('删除表情包', '确定删除这个表情包吗？')) { await window.pywebview?.api?.delete_meme(t.memeId); search(); refreshCollections(); refreshTags() }
       break
     }
     case 'rename-collection': {

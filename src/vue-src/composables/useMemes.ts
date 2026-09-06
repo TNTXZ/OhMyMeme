@@ -57,14 +57,18 @@ export function useMemes() {
         api('search_memes', state.searchQuery, [...state.activeTags], state.activeCollection, offset, MEME_PAGE),
       ])
       if (gen !== searchGen) return
-      state.total = countResult || 0
+      // 桥接失败（null/非数组）时保留当前分页与结果，避免暂时性故障触发空页回退或清空网格
+      if (!Array.isArray(memesResult) || typeof countResult !== 'number') return
+      state.total = countResult
       state.pageCount = Math.max(1, Math.ceil(state.total / MEME_PAGE))
-      state.memes = memesResult || []
+      state.memes = memesResult
+      // 删除等操作使当前页变空时回退到可用末页，避免停留在空页显示「没有表情包」
+      if (!resetPage && state.memes.length === 0 && state.page > 1) {
+        const target = Math.max(1, Math.min(state.page, state.pageCount))
+        if (target !== state.page) { state.page = target; return search(false) }
+      }
     } catch (e) {
       if (gen !== searchGen) return
-      state.memes = []
-      state.total = 0
-      state.pageCount = 1
     } finally {
       if (gen === searchGen) state.loading = false
     }
@@ -91,8 +95,32 @@ export function useMemes() {
     else state.activeCollection = id
     search()
   }
-  async function refreshTags() { try { state.allTags = (await api('get_tags')) || [] } catch { state.allTags = [] } }
-  async function refreshCollections() { try { state.collections = (await api('get_collections')) || [] } catch { state.collections = [] } }
+  async function refreshTags() {
+    let tags: string[] | null = null
+    try { tags = await api('get_tags') } catch { return }
+    // 桥接失败（null/非数组）时保留现有标签与筛选，避免暂时性故障清掉用户筛选
+    if (!Array.isArray(tags)) return
+    state.allTags = tags
+    // 清理已不存在的激活标签（如删除标签下最后一张图后孤儿标签被清理），否则筛选永久卡死
+    let pruned = false
+    for (const t of [...state.activeTags]) {
+      if (!state.allTags.includes(t)) { state.activeTags.delete(t); pruned = true }
+    }
+    if (pruned) await search()
+  }
+  async function refreshCollections() {
+    let items: any[] | null = null
+    try { items = await api('get_collections') } catch { return }
+    // 桥接失败（null/非数组）时保留现有分组树与筛选，避免暂时性故障复位用户分组
+    if (!Array.isArray(items)) return
+    state.collections = items
+    // 当前分组已被后端隐式删除（如同步 push 时 manifest 清理空分组）时复位到「全部」，避免筛选永久空显
+    const ac = state.activeCollection
+    if (ac && ac > 0 && !_collectionExists(state.collections, ac)) {
+      state.activeCollection = null
+      await search()
+    }
+  }
   async function copyMeme(id: number): Promise<boolean> {
     const result = await api('copy_meme', id)
     return !!result?.ok
@@ -107,6 +135,14 @@ export function useMemes() {
   function setMemes(newMemes: Meme[]) { state.memes = newMemes }
 
   function selectAllVisible() { state.selectedIds = new Set(state.memes.map(m => m.id)) }
+
+  function _collectionExists(items: any[], id: number): boolean {
+    for (const c of items) {
+      if (c.id === id) return true
+      if (c.children && _collectionExists(c.children, id)) return true
+    }
+    return false
+  }
   function clearSelection() { state.selectedIds = new Set() }
 
   function canReorder(): boolean {
